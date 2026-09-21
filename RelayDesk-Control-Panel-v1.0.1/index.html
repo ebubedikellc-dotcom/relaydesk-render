@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b1119">
+  <title>RelayDesk — Telegram Group Relay</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div class="brand"><span>R</span><div><b>RelayDesk</b><small>Telegram relay</small></div></div>
+      <nav><button class="active">⌁ Relay control</button><button onclick="document.querySelector('#activity').scrollIntoView()">▤ Delivery history</button></nav>
+      <div class="guard"><b>Permission first</b><small>Use groups and content you own or are allowed to republish. Protected Telegram content is never bypassed.</small></div>
+    </aside>
+    <main>
+      <header><div><p class="kicker">CONTROL PANEL</p><h1>Group-to-group relay</h1></div><div id="connectionBadge" class="badge"><i></i><span>Checking Telegram…</span></div></header>
+
+      <section id="telegramSetup" class="card setup">
+        <div class="section-head"><div><p class="kicker">ONE-TIME SETUP</p><h2>Connect your new Telegram account</h2></div><span class="number">1</span></div>
+        <p class="note">The public old group does not require your old phone. Sign in with the new Telegram account that belongs to your new group.</p>
+        <div class="form-grid credentials">
+          <label>Telegram API ID<input id="apiId" inputmode="numeric" placeholder="12345678"></label>
+          <label>Telegram API Hash<input id="apiHash" type="password" placeholder="From my.telegram.org"></label>
+          <label>New account phone<input id="phone" inputmode="tel" placeholder="+2348012345678"></label>
+          <button id="sendCode" class="primary">Send Telegram code</button>
+        </div>
+        <div id="verifyBox" class="verify hidden">
+          <label>Verification code<input id="loginCode" inputmode="numeric" placeholder="12345"></label>
+          <label id="passwordWrap" class="hidden">Two-step password<input id="twoFactor" type="password" placeholder="Your Telegram 2FA password"></label>
+          <button id="confirmCode" class="primary">Confirm connection</button>
+        </div>
+        <p class="small">Create your API ID and API Hash at <a href="https://my.telegram.org" target="_blank" rel="noreferrer">my.telegram.org</a>. Never give the verification code to another person.</p>
+      </section>
+
+      <section class="card route">
+        <div class="section-head"><div><p class="kicker">GROUP CONNECTION</p><h2>Choose where posts move</h2></div><span class="number">2</span></div>
+        <label>Connection name<input id="relayName" value="Old group to new group"></label>
+        <div class="route-grid">
+          <div><label>OLD GROUP — SOURCE LINK</label><div class="link-input"><span class="avatar source">O</span><input id="sourceLink" placeholder="https://t.me/old_group"></div><small>Public group containing your old and future posts.</small></div>
+          <div class="arrow">→</div>
+          <div><label>NEW GROUP — DESTINATION LINK</label><div class="link-input"><span class="avatar destination">N</span><input id="destinationLink" placeholder="https://t.me/new_group"></div><small>Your new account must be allowed to post here.</small></div>
+        </div>
+        <div class="actions"><button id="checkLinks" class="secondary">Check both links</button><button id="saveRelay" class="primary">Save connection</button></div>
+        <div id="pairResult" class="result hidden"></div>
+      </section>
+
+      <section class="dashboard-grid">
+        <article class="card controls">
+          <div class="section-head"><div><p class="kicker">AUTOMATION</p><h2>Import and monitor</h2></div><span class="number">3</span></div>
+          <div class="row"><div><b>Import every visible old post</b><small>Posts appear normally in your new group. No “imported” label.</small></div><button id="importAll" class="secondary">Import all history</button></div>
+          <div class="row"><div><b>Import a smaller test first</b><small>Use this to confirm formatting before a full import.</small></div><div class="inline"><input id="testCount" type="number" value="10" min="1" max="1000"><button id="importTest" class="secondary">Import test</button></div></div>
+          <div class="row final"><div><b>Live 24/7 delivery</b><small>Runs on the server while your phone and browser are closed.</small></div><button id="toggleRelay" class="primary">Start relay</button></div>
+          <div id="jobProgress" class="progress hidden"><span></span><b>Working…</b></div>
+        </article>
+
+        <article class="card overview">
+          <p class="kicker">TODAY</p><h2>Delivery overview</h2>
+          <div class="stats"><div><strong id="deliveredCount">0</strong><span>Delivered</span></div><div><strong id="failedCount">0</strong><span>Failed</span></div><div><strong id="relayCount">0</strong><span>Connections</span></div></div>
+          <div class="promise"><span>✓</span><p><b>Automatic recovery</b><small>Checkpoints, duplicate protection, retries and 15-minute missed-post checks are active.</small></p></div>
+        </article>
+      </section>
+
+      <section id="activity" class="card activity"><div class="section-head"><div><p class="kicker">ACTIVITY</p><h2>Recent deliveries</h2></div><button id="refresh" class="secondary">Refresh</button></div><div id="activityList" class="activity-list"><p class="empty">No delivery activity yet.</p></div></section>
+      <footer>This control panel never backdates posts and never bypasses Telegram content protection.</footer>
+    </main>
+  </div>
+  <div id="toast" class="toast"></div>
+  <script src="./config.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
