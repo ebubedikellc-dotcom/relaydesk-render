@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: relaydesk-ebubedike-api
+    runtime: docker
+    plan: 0.5c-512mb
+    region: oregon
+    rootDir: RelayDesk-Main-Site-Server-v1.0.1
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: FERNET_KEY
+        generateValue: true
+      - key: DATABASE_PATH
+        value: /data/relaydesk.db
+      - key: TEMP_DIR
+        value: /data/tmp
+      - key: CONTROL_PANEL_ORIGINS
+        value: https://relaydesk-ebubedike-control.onrender.com
+    disk:
+      name: relaydesk-data
+      mountPath: /data
+      sizeGB: 1
+
+  - type: web
+    name: relaydesk-ebubedike-control
+    runtime: static
+    rootDir: RelayDesk-Control-Panel-v1.0.1
+    staticPublishPath: .
+    autoDeployTrigger: commit
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: no-referrer
