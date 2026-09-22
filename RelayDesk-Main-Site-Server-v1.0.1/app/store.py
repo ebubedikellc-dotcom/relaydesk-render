@@ -1,7 +1,7 @@
 import json
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from .config import DATABASE_PATH
 
 _lock = threading.RLock()
@@ -110,3 +110,12 @@ def stats():
         out = {"delivered": 0, "failed": 0, "pending": 0}
         out.update({r["status"]: r["count"] for r in rows})
         return out
+
+def cleanup_old_deliveries(retention_days=30):
+    """Remove old activity details without touching relay checkpoints or credentials."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+    with _lock, _conn() as db:
+        cursor = db.execute("DELETE FROM deliveries WHERE updated_at < ?", (cutoff,))
+        removed = max(0, cursor.rowcount)
+        db.execute("PRAGMA optimize")
+        return removed

@@ -11,7 +11,12 @@ from telethon.errors import FloodWaitError, SessionPasswordNeededError
 from telethon.sessions import StringSession
 from telethon.utils import get_peer_id
 
-from .config import TEMP_DIR, TEMP_MAX_AGE_HOURS, TEMP_CLEANUP_INTERVAL_SECONDS
+from .config import (
+    DELIVERY_LOG_RETENTION_DAYS,
+    TEMP_CLEANUP_INTERVAL_SECONDS,
+    TEMP_DIR,
+    TEMP_MAX_AGE_HOURS,
+)
 from .security import encrypt, decrypt
 from . import store
 
@@ -28,7 +33,14 @@ class RelayEngine:
         self._reconcile_task = None
         self._cleanup_task = None
         self._active_temp_paths = set()
-        self._cleanup_stats = {"removed": 0, "last_run": None}
+        self._cleanup_stats = {
+            "temp_removed": 0,
+            "records_removed": 0,
+            "last_temp_run": None,
+            "last_record_run": None,
+            "retention_days": DELIVERY_LOG_RETENTION_DAYS,
+        }
+        self._last_record_cleanup = 0
 
     def credentials(self):
         api_id = store.get_setting("api_id")
@@ -125,6 +137,7 @@ class RelayEngine:
 
     async def start_maintenance(self):
         await asyncio.to_thread(self.cleanup_temp_files)
+        await asyncio.to_thread(self.cleanup_delivery_records)
         if not self._cleanup_task or self._cleanup_task.done():
             self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
 
@@ -158,8 +171,21 @@ class RelayEngine:
             except (FileNotFoundError, OSError):
                 continue
         self._cleanup_stats = {
-            "removed": self._cleanup_stats.get("removed", 0) + removed,
-            "last_run": int(time.time()),
+            **self._cleanup_stats,
+            "temp_removed": self._cleanup_stats.get("temp_removed", 0) + removed,
+            "last_temp_run": int(time.time()),
+        }
+        return removed
+
+    def cleanup_delivery_records(self):
+        """Prune old activity rows while keeping each relay's latest-post checkpoint."""
+        removed = store.cleanup_old_deliveries(DELIVERY_LOG_RETENTION_DAYS)
+        completed_at = int(time.time())
+        self._last_record_cleanup = completed_at
+        self._cleanup_stats = {
+            **self._cleanup_stats,
+            "records_removed": self._cleanup_stats.get("records_removed", 0) + removed,
+            "last_record_run": completed_at,
         }
         return removed
 
@@ -167,6 +193,8 @@ class RelayEngine:
         while True:
             await asyncio.sleep(TEMP_CLEANUP_INTERVAL_SECONDS)
             await asyncio.to_thread(self.cleanup_temp_files)
+            if time.time() - self._last_record_cleanup >= 86400:
+                await asyncio.to_thread(self.cleanup_delivery_records)
 
     async def check_pair(self, source_link: str, destination_link: str):
         self._require_client()
