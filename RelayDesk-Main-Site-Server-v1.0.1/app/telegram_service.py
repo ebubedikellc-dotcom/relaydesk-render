@@ -22,6 +22,7 @@ class RelayEngine:
         self.pending = {}
         self.jobs = {}
         self._import_tasks = {}
+        self._reconcile_tasks = {}
         self._relay_locks = {}
         self._handler_installed = False
         self._reconcile_task = None
@@ -96,6 +97,7 @@ class RelayEngine:
 
     async def disconnect(self):
         await self.stop_all_history_imports()
+        await self.stop_all_reconciles()
         for item in list(self.pending.values()):
             try:
                 await item["client"].disconnect()
@@ -128,6 +130,7 @@ class RelayEngine:
 
     async def shutdown(self):
         await self.stop_all_history_imports()
+        await self.stop_all_reconciles()
         for task in (self._reconcile_task, self._cleanup_task):
             if task and not task.done():
                 task.cancel()
@@ -182,17 +185,18 @@ class RelayEngine:
             raise ValueError("Relay not found")
         await self.check_pair(relay["source_link"], relay["destination_link"])
         store.set_enabled(relay_id, True)
-        asyncio.create_task(self.reconcile(relay_id))
+        self._schedule_reconcile(relay_id)
 
     async def stop_relay(self, relay_id: int):
         store.set_enabled(relay_id, False)
+        await self.stop_reconcile(relay_id)
 
     async def start_enabled_relays(self):
         if not self.client:
             return
         for relay in store.list_relays():
             if relay["enabled"]:
-                asyncio.create_task(self.reconcile(relay["id"]))
+                self._schedule_reconcile(relay["id"])
         if not self._reconcile_task or self._reconcile_task.done():
             self._reconcile_task = asyncio.create_task(self._periodic_reconcile())
 
@@ -234,6 +238,7 @@ class RelayEngine:
         if not relay:
             raise ValueError("Relay not found")
         await self.stop_history_import(relay_id)
+        await self.stop_reconcile(relay_id)
         await self.check_pair(relay["source_link"], relay["destination_link"])
         source = await self.client.get_entity(relay["source_link"])
         latest = await self.client.get_messages(source, limit=1)
@@ -248,8 +253,34 @@ class RelayEngine:
             "failed": previous.get("failed", 0),
             "message": "Old posts skipped. Monitoring new posts only.",
         }
-        asyncio.create_task(self.reconcile(relay_id))
+        self._schedule_reconcile(relay_id)
         return {"checkpoint": latest_id, "message": "Old posts stopped. New-post monitoring is active."}
+
+    def _schedule_reconcile(self, relay_id: int):
+        current = self._reconcile_tasks.get(relay_id)
+        if current and not current.done():
+            return current
+        task = asyncio.create_task(self.reconcile(relay_id))
+        self._reconcile_tasks[relay_id] = task
+        task.add_done_callback(
+            lambda finished, rid=relay_id: self._reconcile_tasks.pop(rid, None)
+            if self._reconcile_tasks.get(rid) is finished else None
+        )
+        return task
+
+    async def stop_reconcile(self, relay_id: int):
+        task = self._reconcile_tasks.get(relay_id)
+        if not task or task.done() or task is asyncio.current_task():
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    async def stop_all_reconciles(self):
+        for relay_id in list(self._reconcile_tasks):
+            await self.stop_reconcile(relay_id)
 
     async def _import_history_job(self, relay_id: int, limit: int):
         job = self.jobs[relay_id]
@@ -310,9 +341,20 @@ class RelayEngine:
                     group = [message]; i += 1
                     while i < len(messages) and messages[i].grouped_id == message.grouped_id:
                         group.append(messages[i]); i += 1
+                    current = store.get_relay(relay_id)
+                    if not current or not current["enabled"]:
+                        return
+                    if max(item.id for item in group) <= int(current["last_source_id"] or 0):
+                        continue
                     await self._deliver(relay, group)
                 else:
-                    await self._deliver(relay, [message]); i += 1
+                    i += 1
+                    current = store.get_relay(relay_id)
+                    if not current or not current["enabled"]:
+                        return
+                    if message.id <= int(current["last_source_id"] or 0):
+                        continue
+                    await self._deliver(relay, [message])
         except Exception as exc:
             store.record_delivery(relay_id, "", 0, "system", "failed", error=f"Reconcile: {str(exc)[:300]}")
 
@@ -322,12 +364,17 @@ class RelayEngine:
             for relay in store.list_relays():
                 if relay["enabled"]:
                     await self._retry_failures(relay)
-                    await self.reconcile(relay["id"])
+                    self._schedule_reconcile(relay["id"])
 
     async def _retry_failures(self, relay):
         try:
             source = await self.client.get_entity(relay["source_link"])
             for item in store.failed_deliveries(relay["id"]):
+                current = store.get_relay(relay["id"])
+                if not current or not current["enabled"]:
+                    return
+                if item["source_message_id"] <= int(current["last_source_id"] or 0):
+                    continue
                 message = await self.client.get_messages(source, ids=item["source_message_id"])
                 if message:
                     await self._deliver(relay, [message])
