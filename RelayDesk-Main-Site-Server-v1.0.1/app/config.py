@@ -3,6 +3,8 @@ from pathlib import Path
 
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "/data/relaydesk.db"))
 TEMP_DIR = Path(os.getenv("TEMP_DIR", "/data/tmp"))
+TEMP_MAX_AGE_HOURS = max(1, int(os.getenv("TEMP_MAX_AGE_HOURS", "24")))
+TEMP_CLEANUP_INTERVAL_SECONDS = max(300, int(os.getenv("TEMP_CLEANUP_INTERVAL_SECONDS", "3600")))
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 FERNET_KEY = os.getenv("FERNET_KEY", "")

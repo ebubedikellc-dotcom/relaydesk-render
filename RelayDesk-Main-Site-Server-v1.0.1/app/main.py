@@ -16,13 +16,13 @@ from .telegram_service import engine
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     store.init_db()
+    await engine.start_maintenance()
     await engine.restore()
     yield
-    if engine.client:
-        await engine.client.disconnect()
+    await engine.shutdown()
 
 
-app = FastAPI(title="RelayDesk", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="RelayDesk", version="1.1.0", lifespan=lifespan)
 origins = [x.strip() for x in os.getenv("CONTROL_PANEL_ORIGINS", "*").split(",") if x.strip()]
 app.add_middleware(
     CORSMiddleware,
@@ -151,6 +151,24 @@ async def import_history(relay_id: int, body: ImportInput):
     try:
         await engine.import_history(relay_id, body.limit)
         return {"ok": True, "message": "Historical import started in the background."}
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/api/relays/{relay_id}/import/stop")
+async def stop_history_import(relay_id: int):
+    try:
+        result = await engine.stop_history_import(relay_id)
+        return {"ok": True, **result}
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/api/relays/{relay_id}/new-only")
+async def new_posts_only(relay_id: int):
+    try:
+        result = await engine.new_posts_only(relay_id)
+        return {"ok": True, **result}
     except Exception as exc:
         raise HTTPException(400, str(exc))
 
