@@ -13,6 +13,7 @@ from telethon.utils import get_peer_id
 
 from .config import (
     DELIVERY_LOG_RETENTION_DAYS,
+    RELAY_CHECK_INTERVAL_SECONDS,
     TEMP_CLEANUP_INTERVAL_SECONDS,
     TEMP_DIR,
     TEMP_MAX_AGE_HOURS,
@@ -387,12 +388,23 @@ class RelayEngine:
             store.record_delivery(relay_id, "", 0, "system", "failed", error=f"Reconcile: {str(exc)[:300]}")
 
     async def _periodic_reconcile(self):
-        while self.client and self.client.is_connected():
-            await asyncio.sleep(900)
+        """Quickly recover any post missed by Telegram's live event stream."""
+        last_retry = 0.0
+        while self.client:
+            await asyncio.sleep(RELAY_CHECK_INTERVAL_SECONDS)
+            if not self.client.is_connected():
+                try:
+                    await self.client.connect()
+                except Exception:
+                    continue
             for relay in store.list_relays():
                 if relay["enabled"]:
-                    await self._retry_failures(relay)
                     self._schedule_reconcile(relay["id"])
+            if time.time() - last_retry >= 60:
+                for relay in store.list_relays():
+                    if relay["enabled"]:
+                        await self._retry_failures(relay)
+                last_retry = time.time()
 
     async def _retry_failures(self, relay):
         try:
