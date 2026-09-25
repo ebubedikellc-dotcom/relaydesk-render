@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#0b1119">
   <title>RelayDesk — Telegram Group Relay</title>
-  <link rel="stylesheet" href="./styles.css?v=1.1.0">
+  <link rel="stylesheet" href="./styles.css?v=1.2.0">
 </head>
 <body>
   <div class="app">
@@ -63,12 +63,21 @@
         </article>
       </section>
 
+      <section class="card" id="ownerComposer">
+        <p class="kicker">YOUR OWN MESSAGE</p><h2>Send a message to your group</h2>
+        <p class="note">Links are removed from copied posts. Messages you write here keep your links and are sent only when you press Send.</p>
+        <label>Destination group<select id="messageDestination" style="width:100%;padding:14px;background:#101b29;color:inherit;border:1px solid #35465e;border-radius:12px"><option value="">Save a connection first</option></select></label>
+        <label>Your message<textarea id="ownerMessage" rows="7" maxlength="4096" placeholder="Write your message here. You can include your own link." style="width:100%;box-sizing:border-box;padding:16px;background:#101b29;color:inherit;border:1px solid #35465e;border-radius:12px;font:inherit;resize:vertical"></textarea></label>
+        <div class="actions"><button id="sendOwnerMessage" class="primary">Send to group</button></div>
+        <p id="ownerMessageStatus" class="note" role="status"></p>
+      </section>
+
       <section id="activity" class="card activity"><div class="section-head"><div><p class="kicker">ACTIVITY</p><h2>Recent deliveries</h2></div><button id="refresh" class="secondary">Refresh</button></div><div id="activityList" class="activity-list"><p class="empty">No delivery activity yet.</p></div></section>
       <footer>This control panel never backdates posts and never bypasses Telegram content protection.</footer>
     </main>
   </div>
   <div id="toast" class="toast"></div>
-  <script src="./config.js?v=1.1.0"></script>
-  <script src="./app.js?v=1.1.0"></script>
+  <script src="./config.js?v=1.2.0"></script>
+  <script src="./app.js?v=1.2.0"></script>
 </body>
 </html>
