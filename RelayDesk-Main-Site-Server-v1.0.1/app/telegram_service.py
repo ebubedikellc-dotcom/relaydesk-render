@@ -20,6 +20,7 @@ from .config import (
 )
 from .security import encrypt, decrypt
 from . import store
+from .link_filter import without_links
 
 
 class RelayEngine:
@@ -196,6 +197,20 @@ class RelayEngine:
             await asyncio.to_thread(self.cleanup_temp_files)
             if time.time() - self._last_record_cleanup >= 86400:
                 await asyncio.to_thread(self.cleanup_delivery_records)
+
+    async def send_owner_message(self, relay_id: int, text: str):
+        self._require_client()
+        relay = store.get_relay(relay_id)
+        if not relay:
+            raise ValueError("Save your group connection first.")
+        if not text.strip():
+            raise ValueError("Write a message first.")
+        if len(text.encode("utf-16-le")) // 2 > 4096:
+            raise ValueError("Message is too long. Please shorten it.")
+        destination = await self.client.get_entity(relay["destination_link"])
+        # Only deliberately composed owner messages keep links.
+        sent = await self.client.send_message(destination, text, parse_mode=None, link_preview=False)
+        return sent.id
 
     async def check_pair(self, source_link: str, destination_link: str):
         self._require_client()
@@ -481,22 +496,22 @@ class RelayEngine:
             return False
 
     async def _send_one(self, destination, message, import_media=True):
-        text = message.message or ""
-        if not message.media or not import_media:
-            if not text:
+        text, clean_entities = without_links(message.message, message.entities)
+        if not message.media or not import_media or type(message.media).__name__ == "MessageMediaWebPage":
+            if not text.strip():
                 return []
-            sent = await self.client.send_message(destination, text, formatting_entities=message.entities, link_preview=True)
+            sent = await self.client.send_message(destination, text, formatting_entities=clean_entities, link_preview=False)
             return [sent.id]
         folder = Path(tempfile.mkdtemp(prefix="relay_", dir=TEMP_DIR))
         self._active_temp_paths.add(str(folder.resolve()))
         try:
             path = await message.download_media(file=str(folder))
             if not path:
-                if text:
-                    sent = await self.client.send_message(destination, text, formatting_entities=message.entities)
+                if text.strip():
+                    sent = await self.client.send_message(destination, text, formatting_entities=clean_entities, link_preview=False)
                     return [sent.id]
                 return []
-            sent = await self.client.send_file(destination, path, caption=text or None, formatting_entities=message.entities,
+            sent = await self.client.send_file(destination, path, caption=text or None, formatting_entities=clean_entities,
                 voice_note=bool(getattr(message, "voice", None)), video_note=bool(getattr(message, "video_note", None)),
                 supports_streaming=bool(getattr(message, "video", None)))
             return [sent.id]
@@ -515,11 +530,12 @@ class RelayEngine:
         try:
             files, captions, entities = [], [], []
             for message in messages:
+                text, clean_entities = without_links(message.message, message.entities)
                 path = await message.download_media(file=str(folder))
                 if path:
-                    files.append(path); captions.append(message.message or ""); entities.append(message.entities or [])
-                elif message.message:
-                    await self.client.send_message(destination, message.message, formatting_entities=message.entities)
+                    files.append(path); captions.append(text); entities.append(clean_entities)
+                elif text.strip():
+                    await self.client.send_message(destination, text, formatting_entities=clean_entities, link_preview=False)
             if not files:
                 return []
             sent = await self.client.send_file(destination, files, caption=captions, formatting_entities=entities)

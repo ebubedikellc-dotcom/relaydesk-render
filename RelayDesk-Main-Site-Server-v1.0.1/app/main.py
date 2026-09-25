@@ -79,6 +79,19 @@ class ImportInput(BaseModel):
     limit: int = Field(default=0, ge=0, le=1000000)
 
 
+class OwnerMessageInput(BaseModel):
+    text: str = Field(min_length=1, max_length=4096)
+
+
+@app.post("/api/relays/{relay_id}/message")
+async def send_owner_message(relay_id: int, body: OwnerMessageInput):
+    try:
+        message_id = await engine.send_owner_message(relay_id, body.text)
+        return {"ok": True, "message_id": message_id, "message": "Message sent to your destination group."}
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
+
+
 @app.get("/health")
 async def health():
     return {"ok": True}
