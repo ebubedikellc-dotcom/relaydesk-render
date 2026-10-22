@@ -3,6 +3,9 @@ import secrets
 from base64 import b64decode
 from contextlib import asynccontextmanager
 import os
+from datetime import datetime
+from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -12,6 +15,8 @@ from pydantic import BaseModel, Field
 from .config import ADMIN_USERNAME, ADMIN_PASSWORD
 from . import store
 from .telegram_service import engine
+from .post_format import format_post
+from .link_filter import without_links
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -22,7 +27,7 @@ async def lifespan(app: FastAPI):
     await engine.shutdown()
 
 
-app = FastAPI(title="RelayDesk", version="1.1.0", lifespan=lifespan)
+app = FastAPI(title="RelayDesk", version="1.3.0", lifespan=lifespan)
 origins = [x.strip() for x in os.getenv("CONTROL_PANEL_ORIGINS", "*").split(",") if x.strip()]
 app.add_middleware(
     CORSMiddleware,
@@ -83,6 +88,57 @@ class OwnerMessageInput(BaseModel):
     text: str = Field(min_length=1, max_length=4096)
 
 
+class PostFormatInput(BaseModel):
+    enabled: bool = True
+    default_sport: Literal["football", "table_tennis", "basketball", "tennis", "betting"] = "football"
+    source_timezone: str = Field(default="Africa/Lagos", max_length=80)
+    stake_high: bool = True
+    promo_platform: Literal["Stake", "SportyBet", "Bet9ja", "BetKing", "Betway", "1xBet"] = "Stake"
+    promo_code: str = Field(default="", max_length=50, pattern=r"^[A-Za-z0-9_-]*$")
+    crash_promo_code: str = Field(default="", max_length=50, pattern=r"^[A-Za-z0-9_-]*$")
+
+
+class PostPreviewInput(BaseModel):
+    text: str = Field(min_length=1, max_length=20000)
+    posted_at: datetime | None = None
+    settings: PostFormatInput | None = None
+
+
+def validated_format(body):
+    try:
+        ZoneInfo(body.source_timezone)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise HTTPException(422, "Choose a valid source timezone, such as Africa/Lagos.")
+    for code in (body.promo_code, body.crash_promo_code):
+        if code.upper() in {"YOURCODE", "PROMOCODE", "PLACEHOLDER"}:
+            raise HTTPException(422, "Enter your real promo code or leave it blank.")
+    return body.model_dump()
+
+
+@app.get("/api/post-format")
+async def get_post_format():
+    return {"settings": store.post_format_settings()}
+
+
+@app.put("/api/post-format")
+async def save_post_format(body: PostFormatInput):
+    settings = validated_format(body)
+    store.save_post_format_settings(settings)
+    return {"ok": True, "settings": settings, "message": "Post format saved. New deliveries use these settings."}
+
+
+@app.post("/api/post-format/preview")
+async def preview_post_format(body: PostPreviewInput):
+    settings = validated_format(body.settings) if body.settings else store.post_format_settings()
+    if body.posted_at and body.posted_at.utcoffset() is None:
+        raise HTTPException(422, "The original posting time must include its timezone.")
+    result = format_post(body.text, settings, body.posted_at)
+    preview = result.preview()
+    if result.action == "unchanged":
+        preview["plain_text"] = without_links(body.text)[0]
+    return preview
+
+
 @app.post("/api/relays/{relay_id}/message")
 async def send_owner_message(relay_id: int, body: OwnerMessageInput):
     try:
@@ -94,7 +150,7 @@ async def send_owner_message(relay_id: int, body: OwnerMessageInput):
 
 @app.get("/health")
 async def health():
-    return {"ok": True}
+    return {"ok": True, "version": "1.3.0", "post_format": "category-cards"}
 
 
 @app.get("/api/status")
