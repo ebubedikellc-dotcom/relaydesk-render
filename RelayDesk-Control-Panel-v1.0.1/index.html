@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#0b1119">
   <title>RelayDesk — Telegram Group Relay</title>
-  <link rel="stylesheet" href="./styles.css?v=1.2.0">
+  <link rel="stylesheet" href="./styles.css?v=1.3.0">
 </head>
 <body>
   <div class="app">
@@ -63,9 +63,38 @@
         </article>
       </section>
 
+      <section class="card" id="postFormat">
+        <p class="kicker">POST FORMAT</p><h2>Clear betting messages</h2>
+        <p class="note">Each betting post gets a category heading and a separate message box. Matching bet links stay; source promo codes, referral adverts and bonus claims are removed.</p>
+        <div class="format-switches">
+          <label><input id="formatEnabled" type="checkbox" checked> Format betting posts automatically</label>
+          <label><input id="formatStakeHigh" type="checkbox" checked> Show STAKE HIGH on sports posts</label>
+        </div>
+        <div class="format-grid">
+          <label>Category when a sports post has no label<select id="formatSport"><option value="football">Football</option><option value="table_tennis">Table tennis</option><option value="basketball">Basketball</option><option value="tennis">Tennis</option><option value="betting">General betting</option></select></label>
+          <label>Source timezone for times without a zone<input id="formatTimezone" value="Africa/Lagos" placeholder="Africa/Lagos"></label>
+          <label>Your promo code belongs to<select id="promoPlatform"><option>Stake</option><option>SportyBet</option><option>Bet9ja</option><option>BetKing</option><option>Betway</option><option>1xBet</option></select></label>
+          <label>Your promo code — optional<input id="promoCode" maxlength="50" placeholder="Leave blank until you have your real code" autocomplete="off"></label>
+          <label>Crash promo code — optional<input id="crashPromoCode" maxlength="50" placeholder="Uses your main code if left blank" autocomplete="off"></label>
+        </div>
+        <p class="small">Promo codes appear only for the selected platform. Explicit sport labels take priority over your default category. Confirm the source timezone before relying on timed Crash posts.</p>
+        <div class="actions"><button id="savePostFormat" class="primary" disabled>Save post format</button></div>
+        <p id="formatStatus" class="note" role="status">Loading format settings…</p>
+        <hr class="format-divider">
+        <h2>Preview before sending</h2>
+        <p class="note">Paste an original post here to see the cleaned message. Preview never sends to your group.</p>
+        <div class="actions example-actions"><button class="secondary" data-format-example="football">Football example</button><button class="secondary" data-format-example="table_tennis">Table tennis example</button><button class="secondary" data-format-example="crash">Crash example</button></div>
+        <label>Original post<textarea id="formatSource" rows="7" maxlength="20000" placeholder="Paste the full post, including its bet codes and links."></textarea></label>
+        <label>Original posting time — optional for preview<input id="formatPostedAt" type="datetime-local"></label>
+        <div class="actions"><button id="previewPostFormat" class="secondary" disabled>Show preview</button></div>
+        <div id="formatWarnings" class="note" role="status"></div>
+        <div id="formatPreview" class="format-preview" aria-live="polite"></div>
+        <p class="small">Formats message text and captions. Images and videos stay unchanged; codes or adverts printed inside them are not read or edited. Unknown booking-link formats are omitted and noted in activity. Expired or incomplete Crash signals are skipped.</p>
+      </section>
+
       <section class="card" id="ownerComposer">
         <p class="kicker">YOUR OWN MESSAGE</p><h2>Send a message to your group</h2>
-        <p class="note">Links are removed from copied posts. Messages you write here keep your links and are sent only when you press Send.</p>
+        <p class="note">Copied betting posts keep verified matching bet links when formatting is on. Messages you write here keep your own links and are sent only when you press Send.</p>
         <label>Destination group<select id="messageDestination" style="width:100%;padding:14px;background:#101b29;color:inherit;border:1px solid #35465e;border-radius:12px"><option value="">Save a connection first</option></select></label>
         <label>Your message<textarea id="ownerMessage" rows="7" maxlength="4096" placeholder="Write your message here. You can include your own link." style="width:100%;box-sizing:border-box;padding:16px;background:#101b29;color:inherit;border:1px solid #35465e;border-radius:12px;font:inherit;resize:vertical"></textarea></label>
         <div class="actions"><button id="sendOwnerMessage" class="primary">Send to group</button></div>
@@ -77,7 +106,7 @@
     </main>
   </div>
   <div id="toast" class="toast"></div>
-  <script src="./config.js?v=1.2.0"></script>
-  <script src="./app.js?v=1.2.0"></script>
+  <script src="./config.js?v=1.3.0"></script>
+  <script src="./app.js?v=1.3.0"></script>
 </body>
 </html>

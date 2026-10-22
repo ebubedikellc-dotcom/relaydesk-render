@@ -10,6 +10,7 @@ from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError, SessionPasswordNeededError
 from telethon.sessions import StringSession
 from telethon.utils import get_peer_id
+from telethon.extensions import html
 
 from .config import (
     DELIVERY_LOG_RETENTION_DAYS,
@@ -21,6 +22,7 @@ from .config import (
 from .security import encrypt, decrypt
 from . import store
 from .link_filter import without_links
+from .post_format import combine_messages, format_post
 
 
 class RelayEngine:
@@ -208,7 +210,7 @@ class RelayEngine:
         if len(text.encode("utf-16-le")) // 2 > 4096:
             raise ValueError("Message is too long. Please shorten it.")
         destination = await self.client.get_entity(relay["destination_link"])
-        # Only deliberately composed owner messages keep links.
+        # Owner-composed messages keep their links and bypass automatic formatting.
         sent = await self.client.send_message(destination, text, parse_mode=None, link_preview=False)
         return sent.id
 
@@ -328,6 +330,7 @@ class RelayEngine:
 
     async def _import_history_job(self, relay_id: int, limit: int):
         job = self.jobs[relay_id]
+        job.setdefault("skipped", 0)
         try:
             relay = store.get_relay(relay_id)
             self._require_client()
@@ -339,7 +342,7 @@ class RelayEngine:
                 if pending_group and message.grouped_id != pending_group[0].grouped_id:
                     result = await self._deliver(relay, pending_group)
                     job["processed"] += len(pending_group)
-                    job["delivered" if result else "failed"] += len(pending_group)
+                    job["skipped" if result == "skipped" else "delivered" if result else "failed"] += len(pending_group)
                     pending_group = []
                     job["message"] = f"Processed {job['processed']} posts"
                     await asyncio.sleep(0.35)
@@ -348,13 +351,13 @@ class RelayEngine:
                 else:
                     result = await self._deliver(relay, [message])
                     job["processed"] += 1
-                    job["delivered" if result else "failed"] += 1
+                    job["skipped" if result == "skipped" else "delivered" if result else "failed"] += 1
                     job["message"] = f"Processed {job['processed']} posts"
                     await asyncio.sleep(0.35)
             if pending_group:
                 result = await self._deliver(relay, pending_group)
                 job["processed"] += len(pending_group)
-                job["delivered" if result else "failed"] += len(pending_group)
+                job["skipped" if result == "skipped" else "delivered" if result else "failed"] += len(pending_group)
             job["message"] = "Historical import completed"
         except asyncio.CancelledError:
             job["message"] = "Old-post import stopped"
@@ -477,14 +480,27 @@ class RelayEngine:
         first = fresh[0]
         source_id = first.chat_id
         try:
+            result = format_post(combine_messages(fresh), store.post_format_settings(), first.date)
+            if result.action == "skipped":
+                for message in fresh:
+                    store.record_delivery(relay["id"], source_id, message.id, self._kind(message), "skipped", error=result.reason)
+                    store.set_checkpoint(relay["id"], message.id)
+                return "skipped"
             destination = await self.client.get_entity(relay["destination_link"])
             sent_ids = []
+            # Category cards are separate messages so long lists never exceed media caption limits.
+            clean_override = ("", []) if result.action == "formatted" else None
             if len(fresh) > 1:
-                sent_ids = await self._send_album(destination, fresh, bool(relay["import_media"]))
+                sent_ids = await self._send_album(destination, fresh, bool(relay["import_media"]), clean_override)
             else:
-                sent_ids = await self._send_one(destination, first, bool(relay["import_media"]))
+                sent_ids = await self._send_one(destination, first, bool(relay["import_media"]), clean_override)
+            for card in result.cards:
+                text, entities = html.parse(card)
+                sent = await self.client.send_message(destination, text, formatting_entities=entities, link_preview=False)
+                sent_ids.append(sent.id)
             for message in fresh:
-                store.record_delivery(relay["id"], source_id, message.id, self._kind(message), "delivered", sent_ids)
+                store.record_delivery(relay["id"], source_id, message.id, self._kind(message), "delivered", sent_ids,
+                                      error="; ".join(result.warnings)[:500] or None)
                 store.set_checkpoint(relay["id"], message.id)
             return True
         except FloodWaitError as exc:
@@ -495,8 +511,8 @@ class RelayEngine:
                 store.record_delivery(relay["id"], source_id, message.id, self._kind(message), "failed", error=str(exc)[:500])
             return False
 
-    async def _send_one(self, destination, message, import_media=True):
-        text, clean_entities = without_links(message.message, message.entities)
+    async def _send_one(self, destination, message, import_media=True, clean_override=None):
+        text, clean_entities = clean_override if clean_override is not None else without_links(message.message, message.entities)
         if not message.media or not import_media or type(message.media).__name__ == "MessageMediaWebPage":
             if not text.strip():
                 return []
@@ -519,18 +535,18 @@ class RelayEngine:
             shutil.rmtree(folder, ignore_errors=True)
             self._active_temp_paths.discard(str(folder.resolve()))
 
-    async def _send_album(self, destination, messages, import_media=True):
+    async def _send_album(self, destination, messages, import_media=True, clean_override=None):
         if not import_media:
             ids = []
             for message in messages:
-                ids.extend(await self._send_one(destination, message, False))
+                ids.extend(await self._send_one(destination, message, False, clean_override))
             return ids
         folder = Path(tempfile.mkdtemp(prefix="album_", dir=TEMP_DIR))
         self._active_temp_paths.add(str(folder.resolve()))
         try:
             files, captions, entities = [], [], []
             for message in messages:
-                text, clean_entities = without_links(message.message, message.entities)
+                text, clean_entities = clean_override if clean_override is not None else without_links(message.message, message.entities)
                 path = await message.download_media(file=str(folder))
                 if path:
                     files.append(path); captions.append(text); entities.append(clean_entities)

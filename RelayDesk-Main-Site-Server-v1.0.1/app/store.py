@@ -85,7 +85,7 @@ def set_checkpoint(relay_id, message_id):
 
 def delivery_exists(relay_id, source_message_id):
     with _conn() as db:
-        row = db.execute("SELECT 1 FROM deliveries WHERE relay_id=? AND source_message_id=? AND status='delivered'", (relay_id, source_message_id)).fetchone()
+        row = db.execute("SELECT 1 FROM deliveries WHERE relay_id=? AND source_message_id=? AND status IN ('delivered','skipped')", (relay_id, source_message_id)).fetchone()
         return bool(row)
 
 def record_delivery(relay_id, source_chat_id, source_message_id, kind, status, destination_ids=None, error=None):
@@ -119,3 +119,16 @@ def cleanup_old_deliveries(retention_days=30):
         removed = max(0, cursor.rowcount)
         db.execute("PRAGMA optimize")
         return removed
+
+
+def post_format_settings():
+    from .post_format import DEFAULTS
+    raw = get_setting("post_format", "{}")
+    try:
+        return {**DEFAULTS, **json.loads(raw)}
+    except (ValueError, TypeError):
+        return dict(DEFAULTS)
+
+
+def save_post_format_settings(settings):
+    set_setting("post_format", json.dumps(settings))
